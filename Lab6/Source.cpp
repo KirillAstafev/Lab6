@@ -1,58 +1,89 @@
-#include <Windows.h>
-#include <stdio.h>
+#include<Windows.h> 
+#include<iostream> 
+#include<ctime> 
+#include<locale>
+using namespace std;
 
-#define PRODUCER_DATA_SIZE 5
-#define CONSUMER_DATA_SIZE 20
-#define BUFFER_SIZE 50
+// Наши глобальные переменные
+#define Producers_data 5
+#define Consumers_data 20
+#define BufferSize 50
+HANDLE hFull, hEmpty, hAccess;
 
-struct Buffer {
-	char* buffer;
-	int freePosition;
-	int busyPosition;
+struct CircularBuffer {
+	int* Buffer;				// Хранимые данные.
+	int freeSpace;     // Свободное место в буффере.
+	int occupiedSpace; // Занятое место.
+	int rands;			// рандом
 };
 
-VOID ProducerThread(LPVOID param);
-VOID ConsumerThread(LPVOID param);
-
-int main(int argc, char** argv) {
-	SetConsoleCP(1251);
-	SetConsoleOutputCP(1251);
-
-	HANDLE hFree, hBusy;
-	hFree = CreateSemaphoreA(NULL, BUFFER_SIZE, BUFFER_SIZE, "Free");
-	hBusy = CreateSemaphoreA(NULL, 0, BUFFER_SIZE, "Busy");
-
-
-	
-	system("pause");
+DWORD WINAPI Producer(LPVOID circlBuf) {
+	CircularBuffer* buf = (CircularBuffer*)circlBuf;
+	int Count = 0;
+	while (true) {
+		Count++;
+		cout << "Поток производителя: " << endl << GetCurrentThreadId();
+		srand(rand() % 45 + buf->rands);
+		for (int i = 0; i != Producers_data; i++) {
+			WaitForSingleObject(hEmpty, INFINITE); // ждём появление свободной записи
+			WaitForSingleObject(hAccess, INFINITE); // получаем доступ к указателям
+			buf->Buffer[buf->freeSpace] = (int)(rand() % 45 + 1);
+			cout << "i=" << i + 1 << " [" << buf->freeSpace << "]=" << buf->Buffer[buf->freeSpace] << endl;
+			buf->freeSpace = (buf->freeSpace + 1) % BufferSize;
+			ReleaseSemaphore(hAccess, 1, NULL); // завершаем работу с указателями
+			ReleaseSemaphore(hFull, 1, NULL); // сигнализируем о появлении заполненной записи
+		}
+	}
+	return 0;
+}
+DWORD WINAPI Consumer(LPVOID circlBuf) {
+	CircularBuffer* buf = (CircularBuffer*)circlBuf;
+	int Count = 0;
+	while (true) {
+		Count++;
+		cout << "\t\t\tПоток потребителя: " << GetCurrentThreadId() << endl;
+		for (int i = 0; i != Consumers_data; i++) {
+			WaitForSingleObject(hFull, INFINITE); // ждём появления заполненной записи
+			WaitForSingleObject(hAccess, INFINITE); // получаем доступ к указателям
+			cout << "\t\t\ti=" << i + 1 << " [" << buf->occupiedSpace << "]=" << buf->Buffer[buf->occupiedSpace] << endl;
+			buf->occupiedSpace = (buf->occupiedSpace + 1) % BufferSize;
+			ReleaseSemaphore(hAccess, 1, NULL); // завершили работу с указателями
+			ReleaseSemaphore(hEmpty, 1, NULL); // сигнализируем о появлении свободной записи
+		}
+	}
 	return 0;
 }
 
-VOID ProducerThread(LPVOID param)
-{
-	HANDLE hFree = OpenSemaphoreA(0, FALSE, "Free");
-	if (hFree == INVALID_HANDLE_VALUE) {
-		printf_s("ОШИБКА! НЕТ СЕМАФОРА ДЛЯ СВОБОДНЫХ ПОЗИЦИЙ!");
-		return;
+int main() {
+	setlocale(LC_ALL, "");
+	HANDLE hThreads[2]; // производитель и потребитель
+	DWORD ThreadId;
+	hAccess = CreateSemaphoreA(NULL, 1, 1, "Access"); // управление доступом к разделяемым данным
+	hFull = CreateSemaphoreA(NULL, 0, BufferSize, "Full"); // количество заполненных записей
+	hEmpty = CreateSemaphoreA(NULL, BufferSize, BufferSize, "Empty"); // количество пустых записей
+	srand(time(NULL));
+	CircularBuffer all;
+	all.Buffer = new int[BufferSize];
+	for (int i = 0; i < BufferSize; i++)
+	{
+		all.Buffer[i] = 0;
 	}
+	all.rands = rand() % 100;
+	all.freeSpace = 0;
+	all.occupiedSpace = 0;
+	hThreads[0] = CreateThread(0, 0, Producer, &all, 0, &ThreadId);
+	hThreads[1] = CreateThread(0, 0, Consumer, &all, 0, &ThreadId);
 
-	Buffer* buffer = (Buffer*)param;
+	WaitForMultipleObjects(2, hThreads, true, 1000);
 
-	while (true) {
-
+	for (int i = 0; i < 2; i++)
+	{
+		CloseHandle(hThreads[i]);
 	}
+	CloseHandle(hAccess);
+	CloseHandle(hFull);
+	CloseHandle(hEmpty);
 
-	return;
-}
-
-VOID ConsumerThread(LPVOID param)
-{
-	HANDLE hBusy = OpenSemaphoreA(0, FALSE, "Busy");
-	if (hBusy == INVALID_HANDLE_VALUE) {
-		printf_s("ОШИБКА! НЕТ СЕМАФОРА ДЛЯ ЗАНЯТЫХ ПОЗИЦИЙ!");
-		return;
-	}
-
-	Buffer* buffer = (Buffer*)param;
-	return;
+	system("pause");
+	return 0;
 }
