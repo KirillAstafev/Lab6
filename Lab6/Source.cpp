@@ -5,9 +5,9 @@
 using namespace std;
 
 // Наши глобальные переменные
-#define Producers_data 5
-#define Consumers_data 20
-#define BufferSize 50
+#define Producers_data 4
+#define Consumers_data 12
+#define BufferSize 60
 HANDLE hFull, hEmpty, hAccess;
 
 struct CircularBuffer {
